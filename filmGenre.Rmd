@@ -1,22 +1,21 @@
 ---
 title: "MiniProject3 - Genre Multiplicity in Film History"
+authors: "Dejia Tang, Zicong Wei"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r, message = FALSE}
-# SQL query to get dataframe
-
+```{r message=FALSE, echo=FALSE, warning=FALSE}
 library(mdsr)
 library(RMySQL)
 library(tidyverse)
 library(ggthemes)
+```
 
+### Get dataframe using SQL
+```{r message=FALSE, echo=TRUE, warning=FALSE}
 db <- dbConnect_scidb(dbname = "imdb")
 
+# Tables are joined using ids to speed things up.
 sql <- "
 SELECT t.id, mi.info, t.production_year
 FROM title as t
@@ -26,65 +25,63 @@ WHERE production_year is not NULL
 AND mi.info_type_id = 3;
 "
 df <- db %>%
-  dbGetQuery(sql)
-
-df <- df %>%
+  dbGetQuery(sql) %>%
   filter(production_year < 2017 & production_year > 1927)
+```
 
-glimpse(df)
-
-# First Chart: genre variety
-
+### First Chart: genre variety
+```{r message=FALSE, echo=TRUE, warning=FALSE}
 genres <- df %>%
   group_by(info) %>%
   summarise(g = first(info))
 
+# Calculate totol number of geners appeared each year.
 df1_total <- df %>%
   group_by(production_year) %>%
   summarise(genre_total = n_distinct(info))
 
+# Calculate average number of geners per movie in each year.
 df1_avg <- df %>%
   group_by(production_year, id) %>%
   summarise(genre_count = n_distinct(info)) %>%
   group_by(production_year) %>%
   summarise(genre_avg = mean(genre_count))
-glimpse(df1_avg)
 
-#plot1 <- df1_avg %>%
-#  ggplot(aes(production_year, genre_avg)) +
-#  geom_line()
-#plot1
-
-
+# Join the two tables together.
 df1 <- df1_total %>%
   left_join(df1_avg, on = 'production_year') %>%
   gather(key = "value_type", value = "value",-production_year)
 
-glimpse(df1)
-
+# The plot.
 plot1 <- df1 %>%
   ggplot(aes(production_year, value)) +
   geom_line() +
   facet_wrap(~factor(value_type, labels = c("Average Number of Genres Per Film", "Total Number of Genres")), scale = "free")
 
-# genre_avg , genre_total
+# Themes
 plot1 <- plot1 +
   theme_fivethirtyeight() +
   theme(panel.grid.major = element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+```
 
-
+### Second Chart: Change of Popularity for Short, Drama and Comedy
+```{r message=FALSE, echo=TRUE, warning=FALSE}
+# Calculate totol number of movies appeared each year.
 df2_total <- df %>%
   group_by(production_year) %>%
   summarise(movie_total = n_distinct(id))
 
+# Join and calculate totol each gener's proportion for each year.
 df2 <- df %>%
   left_join(df2_total, on = production_year) %>%
-  group_by(production_year, info) %>%
+  mutate(genre = info) %>%
+  group_by(production_year, genre) %>%
   summarise(proportion = n() / first(movie_total))
 
+# Create the plot.
 plot2 <- df2 %>%
-  filter(info == 'Short' | info == 'Drama'| info == 'Comedy') %>%
-  ggplot(aes(production_year, proportion, col = info)) +
+  filter(genre == 'Short' | genre == 'Drama'| genre == 'Comedy') %>%
+  ggplot(aes(production_year, proportion, col = genre)) +
   geom_line() +
   ggtitle("Proportion of Short, Drama, and Comedy in Film Genres") +
   theme_fivethirtyeight() +
@@ -114,16 +111,14 @@ plot2 <- df2 %>%
                color = "black", size =0.1) +
   geom_text(aes(x = 1960, y = 0.38, label = "Hitchcock 1960"), 
             size = 3, color = "black")
-
-
 ```
 
-## Introduction
+### Problem Statement
 A film can fit more than one genres, and the number of overlapping genres varies throught film history. This research uses IMDB datasset and tries to examine this change of genre overlapping since 1927 when the first motion movie with sound was created. The populatiry of some genres and historical event may influence the complexity of this overlapping. A hypothesis is proposed in this research to explain this change in genre overlapping.  
 
-## Analysis
+### Analysis
 **Below are two plots representing the overall genre's trend in film history.**  
-```{r}
+```{r fig.align="center"}
 plot1
 ```
 
@@ -135,7 +130,7 @@ plot1
 
 **By calcualting the proportion of films' genres in each year, some genres have important influence on the changes of genre overlapping.**  
 
-```{r}
+```{r fig.align="center"}
 plot2
 ```
 
@@ -145,7 +140,7 @@ plot2
 
 2. Drama and Comedy somehow decrease in the past, and have increased since 2000, but they also have decreasing trends in recent years. 
 
-## Hypothesis
+### Hypothesis
 
 1. The 1947 court decesion forced large studios stop block-booking, so that they could not sell a bunch of movies together including some low-quality movies to theaters.This change causes studios to be more selective in the movies they made, resulting in higher production costs and fewer movies made. 
 Bacsue of this reason, some cheap forms of movies may decrease especially short movies. 
@@ -158,6 +153,5 @@ Bacsue of this reason, some cheap forms of movies may decrease especially short 
 
 **All the assumptions above may partially explain the increase and decrease of genre overlapping in the past 90 years of film history.**  
 
-
-
-
+### GitHub Repository:
+https://github.com/zicongwei/IMDBresearch
