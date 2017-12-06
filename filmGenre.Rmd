@@ -1,5 +1,5 @@
 ---
-title: "MiniProject3 - Genre Multiplicity in Film History"
+title: "Genre Multiplicity in Film History"
 authors: "Dejia Tang, Zicong Wei"
 output: html_document
 ---
@@ -12,38 +12,56 @@ library(ggthemes)
 ```
 
 ### Get dataframe using SQL
+### 4=language; 
 ```{r message=FALSE, echo=TRUE, warning=FALSE}
 db <- dbConnect_scidb(dbname = "imdb")
 
 # Tables are joined using ids to speed things up.
 sql <- "
-SELECT t.id, mi.info, t.production_year
+SELECT t.id, mi.info, t.production_year, it.info as type, mi.info_type_id
 FROM title as t
 LEFT JOIN movie_info as mi ON mi.movie_id = t.id
 LEFT JOIN info_type as it ON mi.info_type_id = it.id
-WHERE production_year is not NULL
-AND mi.info_type_id = 3;
+WHERE production_year is not NULL;
 "
 df <- db %>%
   dbGetQuery(sql) %>%
-  filter(production_year < 2017 & production_year > 1927)
+  filter(production_year < 2017)
+
+glimpse(df)
+```
+### Get dataframe using SQL
+```{r message=FALSE, echo=TRUE, warning=FALSE}
+df_country <- df %>%
+  filter(info_type_id == 8) %>%
+  mutate(country = info) %>%
+  select(id, country, production_year)
+
+df_genre <- df %>%
+  filter(info_type_id == 3) %>%
+  mutate(genre = info) %>%
+  select(id, genre, production_year)
+
+df_country_genre <- df_country %>%
+  right_join(df_genre, on = id)
+
+glimpse(df_country_genre)
 ```
 
 ### First Chart: genre variety
 ```{r message=FALSE, echo=TRUE, warning=FALSE}
-genres <- df %>%
-  group_by(info) %>%
-  summarise(g = first(info))
+df_usa <- df_country_genre %>%
+  filter(country == 'USA')
 
 # Calculate totol number of geners appeared each year.
-df1_total <- df %>%
+df1_total <- df_usa %>%
   group_by(production_year) %>%
-  summarise(genre_total = n_distinct(info))
+  summarise(genre_total = n_distinct(genre))
 
 # Calculate average number of geners per movie in each year.
-df1_avg <- df %>%
+df1_avg <- df_usa %>%
   group_by(production_year, id) %>%
-  summarise(genre_count = n_distinct(info)) %>%
+  summarise(genre_count = n_distinct(genre)) %>%
   group_by(production_year) %>%
   summarise(genre_avg = mean(genre_count))
 
@@ -62,21 +80,22 @@ plot1 <- df1 %>%
 plot1 <- plot1 +
   theme_fivethirtyeight() +
   theme(panel.grid.major = element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+plot1
 ```
 
 ### Second Chart: Change of Popularity for Short, Drama and Comedy
 ```{r message=FALSE, echo=TRUE, warning=FALSE}
 # Calculate totol number of movies appeared each year.
-df2_total <- df %>%
+df2_total <- df_usa %>%
   group_by(production_year) %>%
   summarise(movie_total = n_distinct(id))
 
 # Join and calculate totol each gener's proportion for each year.
-df2 <- df %>%
+df2 <- df_usa %>%
   left_join(df2_total, on = production_year) %>%
-  mutate(genre = info) %>%
   group_by(production_year, genre) %>%
-  summarise(proportion = n() / first(movie_total))
+  summarise(proportion = n()/first(movie_total))
 
 # Create the plot.
 plot2 <- df2 %>%
@@ -91,9 +110,9 @@ plot2 <- df2 %>%
                color = "black", size =0.1) +
   geom_text(aes(x = 1947, y = 0.55, label = "United States v.\nParamount Pictures, Inc. 1947"), 
             size = 3, color = "black") +
-  geom_segment(aes(x = 1994, y =0, xend = 1994, yend = 0.3), 
+  geom_segment(aes(x = 1994, y =0, xend = 1994, yend = 0.25), 
                color = "black", size =0.1) +
-  geom_text(aes(x = 1994, y = 0.35, label = "Independent\nFilms Rise 1994"), 
+  geom_text(aes(x = 1994, y = 0.3, label = "Independent\nFilms Rise 1994"), 
             size = 3, color = "black") +
   geom_segment(aes(x = 2000, y =0, xend = 2000, yend = 0.43), 
                color = "black", size =0.1) +
@@ -107,10 +126,101 @@ plot2 <- df2 %>%
                color = "black", size =0.1) +
   geom_text(aes(x = 1976, y = 0.4, label = "Star Wars\n'blockbuster' 1976"), 
             size = 3, color = "black") +
-  geom_segment(aes(x = 1960, y =0, xend = 1960, yend = 0.35), 
+  geom_segment(aes(x = 1927, y =0, xend = 1927, yend = 0.7), 
                color = "black", size =0.1) +
-  geom_text(aes(x = 1960, y = 0.38, label = "Hitchcock 1960"), 
+  geom_text(aes(x = 1927, y = 0.8, label = "First Film with Sound"), 
             size = 3, color = "black")
+
+plot2
+```
+```{r message=FALSE, echo=TRUE, warning=FALSE}
+short <- df_usa %>%
+  filter(genre == 'Comedy' & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+other_genres <- df_usa %>%
+  filter((genre == 'Horror' | genre == 'Romance' | genre == 'Family' | genre == 'Drama' | genre == 'Adventure'| genre == 'Animation') & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+df3 <- df_usa %>%
+  #filter(id %in% comedies$id) %>%
+  #filter(genre != 'Comedy') %>%
+  filter(id %in% short$id & id %in% other_genres$id) %>%
+  filter(genre == 'Horror' | genre == 'Romance' | genre == 'Family' | genre == 'Drama' | genre == 'Adventure'| genre == 'Animation') %>%
+  group_by(production_year, genre) %>%
+  summarize(count = n())
+
+plot3 <- df3 %>%
+  ggplot(aes(x = production_year, y = count, fill= genre)) +
+  geom_bar(stat="identity", position='fill', alpha=0.8) +
+  theme_fivethirtyeight() +
+  scale_fill_manual(
+    values = c("#f7c143", "#556eed", "#f2763c", "#a5a5a5", "#9B002E", "#222222"),
+    name = "Film Genre")
+
+plot3
+```
+
+```{r message=FALSE, echo=TRUE, warning=FALSE}
+drama <- df_usa %>%
+  filter(genre == 'Drama' & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+other_genres <- df_usa %>%
+  filter((genre == 'Sci-Fi' | genre == 'Romance' | genre == 'Western' | genre == 'Fantasy' | genre == 'Adventure'| genre == 'Animation') & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+df4 <- df_usa %>%
+  #filter(id %in% drama$id) %>%
+  #filter(genre != 'Drama') %>%
+  filter(id %in% drama$id & id %in% other_genres$id) %>%
+  filter(genre == 'Sci-Fi' | genre == 'Romance' | genre == 'Western' | genre == 'Fantasy' | genre == 'Adventure'| genre == 'Animation') %>%
+  group_by(production_year, genre) %>%
+  summarize(count = n())
+
+plot4 <- df4 %>%
+  ggplot(aes(x = production_year, y = count, fill= genre)) +
+  geom_bar(stat="identity", position='fill', alpha=0.8) +
+  theme_fivethirtyeight() +
+  scale_fill_manual(
+    values = c("#f7c143", "#556eed", "#f2763c", "#a5a5a5", "#9B002E", "#222222"),
+    name = "Film Genre")
+
+plot4
+```
+
+```{r message=FALSE, echo=TRUE, warning=FALSE}
+short <- df_usa %>%
+  filter(genre == 'Short' & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+other_genres <- df_usa %>%
+  filter((genre == 'Western' | genre == 'Comedy' | genre == 'Musical' | genre == 'Documentary' | genre == 'Drama'| genre == 'Music') & production_year > 1927) %>%
+  group_by(id) %>%
+  summarise(production_year = first(production_year))
+
+df4 <- df_usa %>%
+  #filter(id %in% short$id) %>%
+  #filter(genre != 'Short') %>%
+  filter(id %in% short$id & id %in% other_genres$id) %>%
+  filter(genre == 'Western' | genre == 'Comedy' | genre == 'Musical' | genre == 'Documentary' | genre == 'Drama'| genre == 'Music') %>%
+  group_by(production_year, genre) %>%
+  summarize(count = n())
+
+plot4 <- df4 %>%
+  ggplot(aes(x = production_year, y = count, fill= genre)) +
+  geom_bar(stat="identity", position='fill', alpha=0.8) +
+  theme_fivethirtyeight() +
+  scale_fill_manual(
+    values = c("#f7c143", "#556eed", "#f2763c", "#a5a5a5", "#9B002E", "#222222"),
+    name = "Film Genre")
+
+plot4
 ```
 
 ### Problem Statement
@@ -143,7 +253,7 @@ plot2
 ### Hypothesis
 
 1. The 1947 court decesion forced large studios stop block-booking, so that they could not sell a bunch of movies together including some low-quality movies to theaters.This change causes studios to be more selective in the movies they made, resulting in higher production costs and fewer movies made. 
-Bacsue of this reason, some cheap forms of movies may decrease especially short movies. 
+Because of this reason, some cheap forms of movies may decrease especially short movies. 
 
 2. In recent decades, independent movies become more and more popular. Lots of awards favorite these movies, such as moonlight and birdman, encouraging directors and producers to make non-traditional feature films, and this may promote more short films. 
 
